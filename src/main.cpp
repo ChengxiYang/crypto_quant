@@ -135,6 +135,9 @@ bool load_config_from_file(Config& config, const std::string& config_file) {
             if (exec.contains("secret_key") && !exec["secret_key"].is_null()) {
                 config.api_secret = exec["secret_key"].get<std::string>();
             }
+            if (exec.contains("test_order")) {
+                config.test_order = exec["test_order"].get<bool>();
+            }
             if (exec.contains("testnet")) {
                 config.testnet = exec["testnet"].get<bool>();
             }
@@ -164,7 +167,7 @@ bool load_config_from_file(Config& config, const std::string& config_file) {
             }
         }
         
-        std::cout << "✅ 成功加载配置文件: " << config_file << "\n";
+        std::cout << "成功加载配置文件: " << config_file << "\n";
         return true;
     } catch (const json::parse_error& e) {
         std::cerr << "错误: JSON解析失败: " << e.what() << "\n";
@@ -178,64 +181,15 @@ bool load_config_from_file(Config& config, const std::string& config_file) {
     }
 }
 
-Config parse_arguments(int argc, char* argv[]) {
-    Config config;
-    
-    // 首先尝试从配置文件加载
-    std::string config_file = "config.json";
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--config" && i + 1 < argc) {
-            config_file = argv[++i];
-            config.config_file = config_file;
-        }
-    }
-    
-    // 加载配置文件
-    load_config_from_file(config, config_file);
-    
-    // 解析命令行参数（命令行参数优先级高于配置文件）
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        
-        if (arg == "--help" || arg == "-h") {
-            print_usage(argv[0]);
-            exit(0);
-        } else if (arg == "--config" && i + 1 < argc) {
-            i++; // 跳过config文件路径
-        } else if (arg == "--symbol" && i + 1 < argc) {
-            std::string symbol_str = argv[++i];
-            config.symbol = string_to_symbol(symbol_str);
-        } else if (arg == "--api-key" && i + 1 < argc) {
-            config.api_key = argv[++i];
-        } else if (arg == "--api-secret" && i + 1 < argc) {
-            config.api_secret = argv[++i];
-        } else if (arg == "--test-order") {
-            config.test_order = true;
-        }
-    }
-    
-    // 从环境变量获取API密钥（优先级：命令行 > 环境变量 > 配置文件）
-    if (config.api_key.empty()) {
-        const char* env_key = std::getenv("BINANCE_API_KEY");
-        if (env_key) config.api_key = env_key;
-    }
-    if (config.api_secret.empty()) {
-        const char* env_secret = std::getenv("BINANCE_API_SECRET");
-        if (env_secret) config.api_secret = env_secret;
-    }
-    
-    return config;
-}
-
 int main(int argc, char* argv[]) {
     std::cout << "========================================\n";
     std::cout << "加密货币量化交易系统 - C++主程序\n";
     std::cout << "========================================\n";
     std::cout << "版本: " << crypto_quant_get_version_string() << "\n\n";
     
-    // 解析命令行参数
-    Config config = parse_arguments(argc, argv);
+    // 解析配置文件
+    Config config;
+    load_config_from_file(config, "config.json");
     
     // 初始化库
     if (crypto_quant_init() != 0) {
@@ -319,7 +273,7 @@ int main(int argc, char* argv[]) {
             
             // 连接
             if (order_executor->connect()) {
-                std::cout << "✅ 连接币安交易所成功\n";
+                std::cout << "连接币安交易所成功\n";
                 
                 // 查询余额
                 double balance = order_executor->getBalance(config.symbol);
@@ -328,8 +282,6 @@ int main(int argc, char* argv[]) {
                 // 如果启用了测试下单
                 if (config.test_order) {
                     std::cout << "\n测试下单功能...\n";
-                    std::cout << "提示: 这将提交真实订单，请谨慎操作！\n";
-                    std::cout << "按 Enter 继续，或 Ctrl+C 取消...\n";
                     std::cin.get();
                     
                     // 获取当前价格
@@ -381,20 +333,20 @@ int main(int argc, char* argv[]) {
                             if (status.status != ExecutionResultStatus::SUCCESS) {
                                 std::cout << "撤销订单...\n";
                                 if (order_executor->cancelOrder(result.order_id)) {
-                                    std::cout << "✅ 订单撤销成功\n";
+                                    std::cout << "订单撤销成功\n";
                                 } else {
-                                    std::cout << "⚠ 订单撤销失败\n";
+                                    std::cout << "订单撤销失败\n";
                                 }
                             }
                         } else {
-                            std::cout << "❌ 订单提交失败: " << result.error_message << "\n";
+                            std::cout << "订单提交失败: " << result.error_message << "\n";
                         }
                     } else {
-                        std::cout << "⚠ 无法获取当前价格，跳过下单测试\n";
+                        std::cout << "无法获取当前价格，跳过下单测试\n";
                     }
                 }
             } else {
-                std::cout << "❌ 连接币安交易所失败\n";
+                std::cout << "连接币安交易所失败\n";
                 std::cout << "提示: 请检查API密钥是否正确\n";
             }
         } else {

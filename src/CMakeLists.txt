@@ -10,7 +10,9 @@ add_library(crypto_quant_core SHARED
     
     # 策略引擎模块（C++实现）
     strategy/strategy_engine.cpp
-    strategy/strategy_engine_impl.cpp
+    strategy/rsi_strategy.cpp
+    strategy/momentum_strategy.cpp
+    strategy/mean_reversion_strategy.cpp
     
     # 订单执行模块（C++实现）
     execution/order_executor.cpp
@@ -104,7 +106,6 @@ set_target_properties(crypto_quant_main PROPERTIES
 add_custom_command(
     TARGET crypto_quant_main POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/config.json
         ${CMAKE_SOURCE_DIR}/release/config.json
     COMMENT "Copying config.json to release directory"
 )
