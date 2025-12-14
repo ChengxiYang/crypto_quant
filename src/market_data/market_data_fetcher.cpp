@@ -1,20 +1,18 @@
-#include <cstdlib>
-#include <cstring>
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <memory>
 #include <spdlog/spdlog.h>
 
 #include "market_data_fetcher.h"
+#include "websocket_client.h"
 
 namespace crypto_quant
 {
 
     MarketDataFetcher::MarketDataFetcher()
         : is_running(false),
-          use_binance(true), use_coingecko(true),
-          rest_client_ptr(nullptr), websocket_client_ptr(nullptr),
-          retry_count(0)
+          use_binance(true), use_coingecko(true)
     {
         spdlog::debug("MarketDataFetcher constructor called");
     }
@@ -25,27 +23,14 @@ namespace crypto_quant
         {
             stop();
         }
-        cleanupClients();
         spdlog::debug("MarketDataFetcher destructor called");
     }
 
     bool MarketDataFetcher::initialize()
     {
         std::lock_guard<std::mutex> lock(mutex);
-        
-        // 根据数据源选择初始化相应的客户端
-        bool success = true;
-        
-        if (use_binance.load()) {
-            if (!initializeRESTClient()) {
-                spdlog::warn("Failed to initialize REST client, will use fallback mode");
-                success = false;
-            }
-        }
- 
-        spdlog::info("MarketDataFetcher initialized (REST: {}, WebSocket: {})", 
-                     rest_client_ptr != nullptr, websocket_client_ptr != nullptr);
-        return success;
+        spdlog::info("MarketDataFetcher initialized");
+        return true;
     }
 
     int MarketDataFetcher::start(symbol_t symbol)
@@ -60,17 +45,14 @@ namespace crypto_quant
         is_running.store(true);
         current_symbol = symbol;
 
-        // 如果使用 WebSocket，优先使用 WebSocket 实时数据
-        if (use_binance.load() && websocket_client_ptr == nullptr) {
+        // 如果使用 WebSocket，初始化 WebSocket 客户端
+        if (use_binance.load()) {
             initializeWebSocketClient(symbol);
         }
         
-        // 启动数据收集线程（用于 REST 轮询或备用模式）
-        data_thread = std::thread([this, symbol]()
+        // 启动数据收集线程（用于备用模式）
+        data_thread = std::thread([this]()
                                   {
-            int consecutive_errors = 0;
-            const int MAX_CONSECUTIVE_ERRORS = 5;
-            
             while (is_running.load()) {
                 try {
                     // 获取当前交易对（线程安全）
@@ -80,44 +62,35 @@ namespace crypto_quant
                         current_sym = current_symbol;
                     }
                     
-                    orderbook_t orderbook;
-                    bool data_fetched = false;
-                    
-                    // 优先从 REST API 获取数据
-                    if (use_binance.load() && rest_client_ptr != nullptr) {
-                        data_fetched = fetchOrderbookFromREST(current_sym, orderbook);
-                    }
-                    
-                    // 如果 REST 获取失败，使用模拟数据作为备用
-                    if (!data_fetched) {
-                        orderbook = generateOrderbook(current_sym);
-                        if (consecutive_errors < MAX_CONSECUTIVE_ERRORS) {
-                            consecutive_errors++;
-                            if (consecutive_errors == MAX_CONSECUTIVE_ERRORS) {
-                                spdlog::warn("Using fallback mode after {} consecutive errors", 
-                                           MAX_CONSECUTIVE_ERRORS);
-                            }
-                        }
-                    } else {
-                        consecutive_errors = 0;
-                    }
-                    
-                    // 调用回调函数（如果已设置）
-                    std::function<void(const orderbook_t&)> callback;
+                    // 如果 WebSocket 未运行，使用模拟数据
+                    bool use_fallback = true;
                     {
                         std::lock_guard<std::mutex> lock(mutex);
-                        callback = orderbook_callback;
+                        if (websocket_client_ && websocket_client_->isRunning()) {
+                            use_fallback = false;
+                        }
                     }
                     
-                    if (callback) {
-                        callback(orderbook);
+                    if (use_fallback) {
+                        orderbook_t orderbook = generateOrderbook(current_sym);
+                        
+                        // 调用回调函数（如果已设置）
+                        std::function<void(const orderbook_t&)> callback;
+                        {
+                            std::lock_guard<std::mutex> lock(mutex);
+                            callback = orderbook_callback;
+                        }
+                        
+                        if (callback) {
+                            callback(orderbook);
+                        }
                     }
                 } catch (const std::exception& e) {
                     spdlog::error("Error in market data thread: {}", e.what());
                 }
                 
-                // 如果使用 WebSocket，减少 REST 轮询频率
-                int sleep_ms = (websocket_client_ptr != nullptr) ? 5000 : 1000;
+                // 如果使用 WebSocket，减少轮询频率
+                int sleep_ms = (websocket_client_ && websocket_client_->isRunning()) ? 5000 : 1000;
                 std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
             } });
 
@@ -136,8 +109,12 @@ namespace crypto_quant
         is_running.store(false);
         
         // 停止 WebSocket 客户端
-        if (websocket_client_ptr != nullptr) {
-            websocket_client_stop(websocket_client_ptr);
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (websocket_client_) {
+                websocket_client_->stop();
+                websocket_client_.reset();
+            }
         }
         
         // 等待线程结束
@@ -153,22 +130,13 @@ namespace crypto_quant
     {
         std::lock_guard<std::mutex> lock(mutex);
         orderbook_callback = callback;
-        spdlog::debug("C++ callback set");
+        spdlog::debug("Orderbook callback set");
     }
 
     orderbook_t MarketDataFetcher::getOrderbook(symbol_t symbol) const
     {
         std::lock_guard<std::mutex> lock(mutex);
-        
-        orderbook_t orderbook;
-        // 尝试从 REST API 获取
-        if (use_binance.load() && rest_client_ptr != nullptr) {
-            if (fetchOrderbookFromREST(symbol, orderbook)) {
-                return orderbook;
-            }
-        }
-        
-        // 如果失败，返回模拟数据
+        // 返回模拟数据
         return generateOrderbook(symbol);
     }
 
@@ -177,12 +145,6 @@ namespace crypto_quant
         std::lock_guard<std::mutex> lock(mutex);
         this->api_key = api_key;
         this->api_secret = api_secret;
-        
-        // 如果 REST 客户端已初始化，更新凭据
-        if (rest_client_ptr != nullptr) {
-            rest_client_set_credentials(rest_client_ptr, api_key.c_str(), api_secret.c_str());
-        }
-        
         spdlog::info("API credentials set");
     }
 
@@ -215,50 +177,9 @@ namespace crypto_quant
         return orderbook;
     }
     
-    bool MarketDataFetcher::fetchOrderbookFromREST(symbol_t symbol, orderbook_t& orderbook) const
-    {
-        if (!rest_client_ptr) {
-            return false;
-        }
-        
-        int result = rest_client_get_orderbook(rest_client_ptr, symbol, &orderbook);
-        if (result == 0) {
-            spdlog::debug("Successfully fetched orderbook from REST API for symbol: {}", 
-                         static_cast<int>(symbol));
-            return true;
-        } else {
-            spdlog::debug("Failed to fetch orderbook from REST API for symbol: {}", 
-                         static_cast<int>(symbol));
-            return false;
-        }
-    }
-    
-    bool MarketDataFetcher::initializeRESTClient()
-    {
-        if (rest_client_ptr != nullptr) {
-            return true; // 已经初始化
-        }
-        
-        const char* binance_base_url = "https://api.binance.com";
-        rest_client_ptr = rest_client_create(binance_base_url);
-        
-        if (rest_client_ptr == nullptr) {
-            spdlog::error("Failed to create REST client");
-            return false;
-        }
-        
-        // 设置 API 凭据（如果已提供）
-        if (!api_key.empty() && !api_secret.empty()) {
-            rest_client_set_credentials(rest_client_ptr, api_key.c_str(), api_secret.c_str());
-        }
-        
-        spdlog::info("REST client initialized");
-        return true;
-    }
-    
     bool MarketDataFetcher::initializeWebSocketClient(symbol_t symbol)
     {
-        if (websocket_client_ptr != nullptr) {
+        if (websocket_client_) {
             return true; // 已经初始化
         }
         
@@ -268,61 +189,46 @@ namespace crypto_quant
                       binance_symbol.begin(), ::tolower);
         std::string ws_url = "wss://stream.binance.com:9443/ws/" + binance_symbol + "@depth20@100ms";
         
-        websocket_client_ptr = websocket_client_create(ws_url.c_str());
-        
-        if (websocket_client_ptr == nullptr) {
-            spdlog::error("Failed to create WebSocket client");
+        try {
+            websocket_client_ = std::unique_ptr<WebSocketClient>(new WebSocketClient(ws_url));
+            
+            if (!websocket_client_->isInitialized()) {
+                spdlog::error("Failed to initialize WebSocket client");
+                websocket_client_.reset();
+                return false;
+            }
+            
+            // 设置回调函数
+            websocket_client_->setCallback([this](const orderbook_t* orderbook) {
+                if (!orderbook) {
+                    return;
+                }
+                
+                // 调用回调函数（如果已设置）
+                std::function<void(const orderbook_t&)> callback;
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    callback = orderbook_callback;
+                }
+                
+                if (callback) {
+                    callback(*orderbook);
+                }
+            });
+            
+            // 启动 WebSocket 连接
+            if (!websocket_client_->start()) {
+                spdlog::error("Failed to start WebSocket client");
+                websocket_client_.reset();
+                return false;
+            }
+            
+            spdlog::info("WebSocket client initialized for symbol: {}", binance_symbol);
+            return true;
+        } catch (const std::exception& e) {
+            spdlog::error("Exception creating WebSocket client: {}", e.what());
+            websocket_client_.reset();
             return false;
-        }
-        
-        // 设置回调函数
-        websocket_client_set_callback(websocket_client_ptr, 
-                                     websocketCallbackWrapper, 
-                                     this);
-        
-        // 启动 WebSocket 连接
-        int result = websocket_client_start(websocket_client_ptr);
-        if (result != 0) {
-            spdlog::error("Failed to start WebSocket client");
-            websocket_client_destroy(websocket_client_ptr);
-            websocket_client_ptr = nullptr;
-            return false;
-        }
-        
-        spdlog::info("WebSocket client initialized for symbol: {}", binance_symbol);
-        return true;
-    }
-    
-    void MarketDataFetcher::cleanupClients()
-    {
-        if (websocket_client_ptr != nullptr) {
-            websocket_client_destroy(websocket_client_ptr);
-            websocket_client_ptr = nullptr;
-        }
-        
-        if (rest_client_ptr != nullptr) {
-            rest_client_destroy(rest_client_ptr);
-            rest_client_ptr = nullptr;
-        }
-    }
-    
-    void MarketDataFetcher::websocketCallbackWrapper(const orderbook_t* orderbook, void* user_data)
-    {
-        if (!orderbook || !user_data) {
-            return;
-        }
-        
-        MarketDataFetcher* fetcher = static_cast<MarketDataFetcher*>(user_data);
-        
-        // 获取回调函数并调用
-        std::function<void(const orderbook_t&)> callback;
-        {
-            std::lock_guard<std::mutex> lock(fetcher->mutex);
-            callback = fetcher->orderbook_callback;
-        }
-        
-        if (callback) {
-            callback(*orderbook);
         }
     }
     

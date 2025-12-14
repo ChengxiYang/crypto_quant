@@ -56,18 +56,15 @@ void bind_market_data(py::module& m) {
         .value("ETH_USDT", SYMBOL_ETH_USDT)
         .value("BTC_ETH", SYMBOL_BTC_ETH);
     
-    // 绑定 IMarketDataProvider 接口
-    py::class_<IMarketDataProvider, std::shared_ptr<IMarketDataProvider>>(m, "MarketDataProvider")
-        .def("initialize", &IMarketDataProvider::initialize)
-        .def("cleanup", &IMarketDataProvider::cleanup)
-        .def("set_callback", [](IMarketDataProvider& self, std::function<void(const orderbook_t&)> callback) {
-            self.setCallback(callback);
-        })
-        .def("start", &IMarketDataProvider::start)
-        .def("stop", &IMarketDataProvider::stop)
-        .def("get_orderbook", &IMarketDataProvider::getOrderbook)
-        .def("set_api_key", &IMarketDataProvider::setApiKey)
-        .def("set_data_sources", &IMarketDataProvider::setDataSources);
+    // 绑定 IMarketDataFetcher 接口
+    py::class_<IMarketDataFetcher, std::shared_ptr<IMarketDataFetcher>>(m, "MarketDataFetcher")
+        .def("initialize", &IMarketDataFetcher::initialize)
+        .def("start", &IMarketDataFetcher::start)
+        .def("stop", &IMarketDataFetcher::stop)
+        .def("set_orderbook_callback", &IMarketDataFetcher::setOrderbookCallback)
+        .def("get_orderbook", &IMarketDataFetcher::getOrderbook)
+        .def("set_api_key", &IMarketDataFetcher::setApiKey)
+        .def("set_data_sources", &IMarketDataFetcher::setDataSources);
 }
 
 // 订单薄模块绑定
@@ -229,7 +226,7 @@ void bind_factory(py::module& m) {
         .def_static("create_strategy_engine", &CryptoQuantFactory::createStrategyEngine)
         .def_static("create_order_executor", &CryptoQuantFactory::createOrderExecutor)
         .def_static("create_orderbook_manager", &CryptoQuantFactory::createOrderbookManager)
-        .def_static("create_market_data_provider", &CryptoQuantFactory::createMarketDataProvider)
+        .def_static("create_market_data_fetcher", &CryptoQuantFactory::createMarketDataFetcher)
         .def_static("create_mean_reversion_strategy", &CryptoQuantFactory::createMeanReversionStrategy)
         .def_static("create_momentum_strategy", &CryptoQuantFactory::createMomentumStrategy)
         .def_static("create_rsi_strategy", &CryptoQuantFactory::createRSIStrategy);
@@ -238,7 +235,7 @@ void bind_factory(py::module& m) {
     m.def("create_strategy_engine", &CryptoQuantFactory::createStrategyEngine);
     m.def("create_order_executor", &CryptoQuantFactory::createOrderExecutor);
     m.def("create_orderbook_manager", &CryptoQuantFactory::createOrderbookManager);
-    m.def("create_market_data_provider", &CryptoQuantFactory::createMarketDataProvider);
+    m.def("create_market_data_fetcher", &CryptoQuantFactory::createMarketDataFetcher);
 }
 
 PYBIND11_MODULE(crypto_quant_python, m) {

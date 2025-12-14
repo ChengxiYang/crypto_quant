@@ -1,9 +1,8 @@
 # 核心C/C++库
 add_library(crypto_quant_core SHARED
     # 市场数据模块（C++实现）
-    market_data/market_data.cpp
+    market_data/market_data_fetcher.cpp
     market_data/websocket_client.cpp
-    market_data/rest_client.cpp
     
     # 订单薄模块（C++实现）
     orderbook/orderbook_manager.cpp
@@ -22,7 +21,6 @@ add_library(crypto_quant_core SHARED
     
     # 工具模块（C++实现）
     utils/logger.cpp
-    utils/network_converter.cpp
 )
 
 # 链接库

@@ -87,6 +87,14 @@ namespace crypto_quant
         PARTIAL
     };
 
+    // 交易对类型（提前定义，供其他结构体使用）
+    typedef enum
+    {
+        SYMBOL_BTC_USDT = 0,
+        SYMBOL_ETH_USDT,
+        SYMBOL_BTC_ETH
+    } symbol_t;
+
     // 交易信号结构
     struct TradingSignal
     {
@@ -167,14 +175,6 @@ namespace crypto_quant
         MARKET_DATA_TRADE,
         MARKET_DATA_KLINE
     } market_data_type_t;
-
-    // 交易对类型
-    typedef enum
-    {
-        SYMBOL_BTC_USDT = 0,
-        SYMBOL_ETH_USDT,
-        SYMBOL_BTC_ETH
-    } symbol_t;
     
     // 订单类型
     typedef enum
