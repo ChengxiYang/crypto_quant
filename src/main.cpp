@@ -206,17 +206,17 @@ int main(int argc, char* argv[]) {
     
     try {
         // 创建组件
-        auto market_data_provider = CryptoQuantFactory::createMarketDataProvider();
+        auto market_data_fetcher = CryptoQuantFactory::createMarketDataFetcher();
         auto order_executor = CryptoQuantFactory::createOrderExecutor();
         auto orderbook_manager = CryptoQuantFactory::createOrderbookManager();
         
-        if (!market_data_provider || !order_executor || !orderbook_manager) {
+        if (!market_data_fetcher || !order_executor || !orderbook_manager) {
             crypto_quant_log_error("创建组件失败");
             return 1;
         }
         
         // 初始化组件
-        if (!market_data_provider->initialize()) {
+        if (!market_data_fetcher->initialize()) {
             crypto_quant_log_error("市场数据提供者初始化失败");
             return 1;
         }
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
         crypto_quant_log_info("所有组件初始化成功");
         
         // 设置市场数据回调
-        market_data_provider->setCallback([&orderbook_manager](const orderbook_t& orderbook) {
+        market_data_fetcher->setOrderbookCallback([&orderbook_manager](const orderbook_t& orderbook) {
             // 更新订单薄管理器
             orderbook_manager->updateOrderbook(orderbook);
             
@@ -243,11 +243,11 @@ int main(int argc, char* argv[]) {
         });
         
         // 设置币安数据源
-        market_data_provider->setDataSources(true, false);  // 只使用币安
+        market_data_fetcher->setDataSources(true, false);  // 只使用币安
         
         // 启动市场数据收集
         std::cout << "\n启动市场数据收集 (" << symbol_to_string(config.symbol) << ")...\n";
-        if (!market_data_provider->start(config.symbol)) {
+        if (!market_data_fetcher->start(config.symbol)) {
             crypto_quant_log_error("启动市场数据收集失败");
             return 1;
         }
@@ -374,13 +374,13 @@ int main(int argc, char* argv[]) {
         
         // 停止组件
         std::cout << "\n\n正在停止...\n";
-        market_data_provider->stop();
+        market_data_fetcher->stop();
         if (order_executor->getStatus() == ExecutionStatus::CONNECTED) {
             order_executor->disconnect();
         }
         
         // 清理组件
-        market_data_provider->cleanup();
+        // market_data_fetcher->cleanup();
         order_executor->cleanup();
         orderbook_manager->cleanup();
         

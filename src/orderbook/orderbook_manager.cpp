@@ -1,17 +1,11 @@
-#include "crypto_quant.h"
+#include "orderbook_manager.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
+#include <cstring>
 
 namespace crypto_quant {
 
-// 订单薄管理器实现
-class OrderbookManager : public IOrderbookManager {
-private:
-    std::vector<orderbook_t> orderbooks_;
-    mutable std::mutex mutex_;
-
-public:
-    OrderbookManager() {
+OrderbookManager::OrderbookManager() {
         orderbooks_.resize(3);
         // 初始化每个订单薄
         for (auto& orderbook : orderbooks_) {
@@ -22,19 +16,19 @@ public:
         }
     }
 
-    bool initialize() override {
+bool OrderbookManager::initialize() {
         std::lock_guard<std::mutex> lock(mutex_);
         spdlog::info("OrderbookManager initialized");
         return true;
     }
 
-    void cleanup() override {
+void OrderbookManager::cleanup() {
         std::lock_guard<std::mutex> lock(mutex_);
         orderbooks_.clear();
         spdlog::info("OrderbookManager cleaned up");
     }
 
-    void updateOrderbook(const orderbook_t& orderbook) override {
+void OrderbookManager::updateOrderbook(const orderbook_t& orderbook) {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(orderbook.symbol);
@@ -51,7 +45,7 @@ public:
                     orderbook.ask_count, orderbook.timestamp);
     }
 
-    orderbook_t getOrderbook(symbol_t symbol) const override {
+orderbook_t OrderbookManager::getOrderbook(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -63,7 +57,7 @@ public:
         return orderbooks_[symbol_index];
     }
 
-    double getBestBid(symbol_t symbol) const override {
+double OrderbookManager::getBestBid(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -79,7 +73,7 @@ public:
         return 0.0;
     }
 
-    double getBestAsk(symbol_t symbol) const override {
+double OrderbookManager::getBestAsk(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -95,7 +89,7 @@ public:
         return 0.0;
     }
 
-    double getMidPrice(symbol_t symbol) const override {
+double OrderbookManager::getMidPrice(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -111,7 +105,7 @@ public:
         return 0.0;
     }
 
-    double getSpread(symbol_t symbol) const override {
+double OrderbookManager::getSpread(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -127,7 +121,7 @@ public:
         return 0.0;
     }
 
-    double getBidDepth(symbol_t symbol, int levels) const override {
+double OrderbookManager::getBidDepth(symbol_t symbol, int levels) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -146,7 +140,7 @@ public:
         return depth;
     }
 
-    double getAskDepth(symbol_t symbol, int levels) const override {
+double OrderbookManager::getAskDepth(symbol_t symbol, int levels) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -165,7 +159,7 @@ public:
         return depth;
     }
 
-    uint64_t getTimestamp(symbol_t symbol) const override {
+uint64_t OrderbookManager::getTimestamp(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -176,7 +170,7 @@ public:
         return orderbooks_[symbol_index].timestamp;
     }
 
-    bool isValid(symbol_t symbol) const override {
+bool OrderbookManager::isValid(symbol_t symbol) const {
         std::lock_guard<std::mutex> lock(mutex_);
         
         int symbol_index = static_cast<int>(symbol);
@@ -196,6 +190,4 @@ public:
         
         return false; // 无效
     }
-};
-
-} // namespace crypto_quant
+}

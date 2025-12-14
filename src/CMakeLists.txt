@@ -106,7 +106,8 @@ set_target_properties(crypto_quant_main PROPERTIES
 add_custom_command(
     TARGET crypto_quant_main POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/release/config.json
+        ${CMAKE_SOURCE_DIR}/config.json
+        ${RELEASE_DIR}/config.json
     COMMENT "Copying config.json to release directory"
 )
 
