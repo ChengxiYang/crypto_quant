@@ -235,11 +235,14 @@ namespace crypto_quant
     } price_level_net_t;
 #endif
 
-    // 价格和数量结构（本地使用）
+    // 价格和数量结构
     typedef struct
     {
+        // 挂单价格
         double price;
+        // 交易所在这一价格的挂单合并显示总量
         double quantity;
+        // 该价格档位数据的最新更新时间戳
         uint64_t timestamp;
     } price_level_t;
 
@@ -270,14 +273,17 @@ namespace crypto_quant
     } orderbook_net_t;
 #endif
 
-    // 订单薄结构（本地使用） todo 将订单薄深度改成可配置
+    // 订单薄结构
     typedef struct
     {
         symbol_t symbol;
         price_level_t bids[20]; // 买盘
         price_level_t asks[20]; // 卖盘
+        // 实际有效的买盘档位数量
         uint32_t bid_count;
+        // 实际有效的卖盘档位数量
         uint32_t ask_count;
+        // 整个订单簿的最新更新时间戳
         uint64_t timestamp;
     } orderbook_t;
 

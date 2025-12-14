@@ -62,7 +62,7 @@ size_t WebSocketClient::onDataReceived(char* data, size_t size) {
     return size;
 }
 
-// 解析订单薄数据（使用 void* 避免在头文件中暴露 json 类型）
+// 解析交易所推送的订单薄数据（使用 void* 避免在头文件中暴露 json 类型）
 orderbook_t WebSocketClient::parseOrderbook(const void* json_obj, const std::string& stream_name) const {
     const json& j = *static_cast<const json*>(json_obj);
     orderbook_t orderbook = {};
